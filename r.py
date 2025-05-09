@@ -3,8 +3,8 @@ from telethon.tl.types import InputPeerChannel
 from time import sleep
 import asyncio
 
-api_id = 'YOUR_API_ID'
-api_hash = 'YOUR_API_HASH'
+api_id = '22564049'
+api_hash = 'c60ebbfdbf49d845e66ebf2407feadd3'
 group_file = 'group.txt'
 message_text = "Hello, this is an automated message!"
 
