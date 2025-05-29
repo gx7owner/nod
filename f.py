@@ -7,8 +7,8 @@ from telegram.ext import (
 )
 
 # ---------------- Configuration ----------------
-TOKEN = "8126587005:AAErZRKQCIIblybMZne-GZ2T2X_IbEX1yn4"  # Replace with your bot token
-OWNER_ID = 7792814115      # Replace with your Telegram user ID
+TOKEN = "8126587005:AAErZRKQCIIblybMZne-GZ2T2X_IbEX1yn4"  # Your bot token
+OWNER_ID = 7792814115                                # Your Telegram user ID
 
 # ---------------- Logging ----------------
 logging.basicConfig(
@@ -18,30 +18,26 @@ logging.basicConfig(
 
 # ---------------- Handlers ----------------
 
-# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     context.application.bot_data.setdefault("users", set()).add(user_id)
-    welcome_text = (
+    await update.message.reply_text(
         "👋 Welcome to the File Library Bot!\n\n"
         "Use /help to see what I can do.\n"
         "Use /browse to explore available file categories."
     )
-    await update.message.reply_text(welcome_text)
 
-# /help
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    help_text = (
+    await update.message.reply_text(
         "📚 *File Library Bot Commands:*\n\n"
         "/start - Welcome message\n"
         "/help - Show this help message\n"
         "/browse - Browse and download files by category\n"
         "/broadcast <message> - (Owner only) Send message to all users\n\n"
-        "*To upload files:* Send a document (owner only), then reply with the category name."
+        "*To upload files:* Send a document (owner only), then reply with the category name.",
+        parse_mode="Markdown"
     )
-    await update.message.reply_markdown(help_text)
 
-# /broadcast (Owner only)
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         return await update.message.reply_text("🚫 Unauthorized.")
@@ -61,7 +57,6 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(f"✅ Broadcast sent to {count} users.")
 
-# Handle file uploads (owner only)
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         return await update.message.reply_text("🚫 Only the owner can upload files.")
@@ -69,9 +64,11 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     doc = update.message.document
     if doc:
         context.user_data["pending_file"] = doc
-        await update.message.reply_text("📁 Please reply with a *category name* for this file.", parse_mode="Markdown")
+        await update.message.reply_text(
+            "📁 Please reply with a *category name* for this file.",
+            parse_mode="Markdown"
+        )
 
-# Handle text messages
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
@@ -79,17 +76,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         doc = context.user_data.pop("pending_file")
         category = text
 
-        # Ensure bot_data["files"] exists
         bot_data = context.application.bot_data
-        if "files" not in bot_data:
-            bot_data["files"] = {}
-
-        if category not in bot_data["files"]:
-            bot_data["files"][category] = []
+        bot_data.setdefault("files", {})
+        bot_data["files"].setdefault(category, [])
 
         if (doc.file_id, doc.file_name) not in bot_data["files"][category]:
             bot_data["files"][category].append((doc.file_id, doc.file_name))
-            await update.message.reply_text(f"✅ File saved under category: *{category}*", parse_mode="Markdown")
+            await update.message.reply_text(
+                f"✅ File saved under category: *{category}*",
+                parse_mode="Markdown"
+            )
         else:
             await update.message.reply_text("⚠️ This file already exists in the category.")
 
@@ -99,7 +95,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("🤖 Unknown command or text. Use /help to see available options.")
 
-# /browse
 async def show_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_data = context.application.bot_data
     file_store = bot_data.get("files", {})
@@ -118,9 +113,11 @@ async def show_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("📚 Select a category to view files:", reply_markup=reply_markup)
+    await update.message.reply_text(
+        "📚 Select a category to view files:",
+        reply_markup=reply_markup
+    )
 
-# Handle buttons
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -133,7 +130,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if file_list:
             for file_id, file_name in file_list:
                 try:
-                    await context.bot.send_document(chat_id=query.message.chat.id, document=file_id, filename=file_name)
+                    await context.bot.send_document(
+                        chat_id=query.message.chat.id,
+                        document=file_id,
+                        filename=file_name
+                    )
                 except Exception as e:
                     logging.warning(f"Failed to send file {file_name}: {e}")
         else:
@@ -146,13 +147,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(cat, callback_data=f"delcat:{cat}")]
             for cat in sorted(bot_data.get("files", {}).keys())
         ]
-        await query.message.reply_text("🗑️ Select a category to delete:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.message.reply_text(
+            "🗑️ Select a category to delete:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
     elif data.startswith("delcat:"):
         category = data.split(":", 1)[1]
         if category in bot_data.get("files", {}):
             del bot_data["files"][category]
-            await query.message.reply_text(f"🗑️ Category *{category}* deleted.", parse_mode="Markdown")
+            await query.message.reply_text(
+                f"🗑️ Category *{category}* deleted.",
+                parse_mode="Markdown"
+            )
         else:
             await query.message.reply_text("❌ Category not found.")
 
@@ -164,7 +171,6 @@ def main():
     # Fix timezone issue for job_queue
     app.job_queue.scheduler.configure(timezone=pytz.UTC)
 
-    # Add handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("broadcast", broadcast))
@@ -175,7 +181,5 @@ def main():
     print("✅ Bot is running...")
     app.run_polling()
 
-# ---------------- Run ----------------
-
 if __name__ == "__main__":
-    main(
+    main()
