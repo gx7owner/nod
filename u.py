@@ -1,157 +1,124 @@
 import logging
-import re
-import sqlite3
-from datetime import datetime, timedelta
-from telegram import Update, ParseMode
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
-)
+import requests
+from random import randint, choice
+from user_agent import generate_user_agent as ua
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, CallbackContext
 
-logging.basicConfig(level=logging.INFO)
+OWNER_ID = 7792814115  # Replace with your Telegram user ID
+banned_links = set()
+
+names = [
+    "Rakesh", "rsmesh", "Aman", "avishek", "mohan", "Neha", "akhilesh", "sayam.",
+    "robin", "rahul", "dev", "meera", "Anushka", "akshita", "manjeet", "manoj",
+    "rakhi", "rampal", "sonu", "Subhashree", "Lakhan", "mohit", "mohini",
+    "kakoli", "prince", "karan", "sushila", "sushil", "Krishna", "Ankit", "prakash"
+]
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
-OWNER_IDS = {7792814115}  # Set of owner/admin IDs
+def send_report(username: str) -> bool:
+    message = f"""Hello sir/ma'am,
 
-DB_PATH = "botdata.db"
+I would like to report a Telegram user who is engaging in suspicious and harmful activities. And child abusing. Their username is {username}. I believe they may be involved in scams and phishing attempts, which is causing harm to the community. I would appreciate it if you could look into this matter and take appropriate action.
 
-# Connect DB and create tables if not exist
-conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-cursor = conn.cursor()
+Thank you for your attention to this matter.
+"""
+    try:
+        email = f'{choice(names)}{randint(9392820,9994958)}@gmail.com'
+        phone = "+91" + str(randint(9392823620,9994997058))
 
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS users (
-    user_id INTEGER PRIMARY KEY,
-    first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)''')
+        res = requests.get('https://telegram.org/support', headers={
+            "user-agent": ua(),
+            "accept": "text/html",
+        })
+        stel = res.cookies.get('stel_ssid', '')
 
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS banned_links (
-    link TEXT PRIMARY KEY
-)''')
+        data = {
+            'message': message,
+            'email': email,
+            'phone': phone,
+            'setln': ''
+        }
 
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS reports (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    reporter_id INTEGER,
-    reported_username TEXT,
-    reason TEXT,
-    report_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)''')
+        headers = {
+            "user-agent": ua(),
+            "accept": "text/html",
+            "origin": "https://telegram.org",
+            "content-type": "application/x-www-form-urlencoded",
+            "referer": "https://telegram.org/support",
+            "cookie": f"stel_ssid={stel}"
+        }
 
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS rate_limits (
-    user_id INTEGER PRIMARY KEY,
-    last_report_time TIMESTAMP,
-    reports_today INTEGER DEFAULT 0
-)''')
+        response = requests.post('https://telegram.org/support', data=data, headers=headers)
+        return "Thanks" in response.text
 
-conn.commit()
-
-USERNAME_REGEX = re.compile(r'^[a-zA-Z0-9_]{5,32}$')
-MAX_REPORTS_PER_DAY = 5
-
-def is_owner(user_id: int) -> bool:
-    return user_id in OWNER_IDS
-
-def valid_username(username: str) -> bool:
-    return USERNAME_REGEX.fullmatch(username) is not None
-
-def can_report(user_id: int) -> bool:
-    cursor.execute("SELECT last_report_time, reports_today FROM rate_limits WHERE user_id=?", (user_id,))
-    row = cursor.fetchone()
-    now = datetime.utcnow()
-
-    if not row:
-        cursor.execute("INSERT INTO rate_limits (user_id, last_report_time, reports_today) VALUES (?, ?, ?)",
-                       (user_id, now, 0))
-        conn.commit()
-        return True
-
-    last_report_time, reports_today = row
-    last_report_time = datetime.fromisoformat(last_report_time)
-
-    # Reset daily count if day changed
-    if now.date() != last_report_time.date():
-        cursor.execute("UPDATE rate_limits SET reports_today=0 WHERE user_id=?", (user_id,))
-        conn.commit()
-        reports_today = 0
-
-    if reports_today >= MAX_REPORTS_PER_DAY:
+    except Exception as e:
+        logger.error(f"Error sending report: {e}")
         return False
 
-    # Optional cooldown, e.g., 30 seconds between reports
-    cooldown = timedelta(seconds=30)
-    if now - last_report_time < cooldown:
-        return False
+def is_banned(username: str) -> bool:
+    return any(banned in username for banned in banned_links)
 
-    return True
-
-def record_report(user_id: int):
-    now = datetime.utcnow()
-    cursor.execute("SELECT reports_today FROM rate_limits WHERE user_id=?", (user_id,))
-    reports_today = cursor.fetchone()[0]
-    reports_today += 1
-    cursor.execute("UPDATE rate_limits SET last_report_time=?, reports_today=? WHERE user_id=?",
-                   (now, reports_today, user_id))
-    conn.commit()
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    cursor.execute("INSERT OR IGNORE INTO users(user_id) VALUES(?)", (user.id,))
-    conn.commit()
-
-    await update.message.reply_text(
-        "Welcome to the Advanced Telegram Report Bot!\n"
-        "Use /report <username> <reason> to report.\n"
-        "Owners can manage banned links and broadcast messages."
+def start(update: Update, context: CallbackContext):
+    update.message.reply_text(
+        "Welcome to the Telegram Report Bot!\nUse /report <username> to report suspicious users.\nOwner can add banned links with /banlink <link>"
     )
 
-async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-
-    if len(context.args) < 2:
-        await update.message.reply_text("Usage: /report <username> <reason>")
+def report(update: Update, context: CallbackContext):
+    if len(context.args) != 1:
+        update.message.reply_text("Usage: /report <username>")
         return
 
     username = context.args[0].strip()
-    reason = " ".join(context.args[1:]).strip()
 
-    if not valid_username(username):
-        await update.message.reply_text("Invalid username format.")
+    if is_banned(username):
+        update.message.reply_text("Sorry, this username contains a banned link and cannot be reported.")
         return
 
-    # Check rate limit
-    if not can_report(user.id):
-        await update.message.reply_text("You have reached your daily report limit or are reporting too fast. Try later.")
+    update.message.reply_text(f"Reporting username: {username}...")
+    success = send_report(username)
+    if success:
+        update.message.reply_text(f"Report for {username} sent successfully!")
+    else:
+        update.message.reply_text(f"Failed to send report for {username}.")
+
+def banlink(update: Update, context: CallbackContext):
+    if update.effective_user.id != OWNER_ID:
+        update.message.reply_text("You are not authorized to use this command.")
         return
 
-    # Check banned links
-    cursor.execute("SELECT 1 FROM banned_links WHERE ? LIKE '%' || link || '%'", (username,))
-    if cursor.fetchone():
-        await update.message.reply_text("Username contains a banned link; cannot report.")
+    if len(context.args) != 1:
+        update.message.reply_text("Usage: /banlink <link>")
         return
 
-    # Log report to DB
-    cursor.execute("INSERT INTO reports (reporter_id, reported_username, reason) VALUES (?, ?, ?)",
-                   (user.id, username, reason))
-    conn.commit()
+    link = context.args[0].strip()
+    banned_links.add(link)
+    update.message.reply_text(f"Added banned link: {link}")
 
-    record_report(user.id)
+def listban(update: Update, context: CallbackContext):
+    if update.effective_user.id != OWNER_ID:
+        update.message.reply_text("You are not authorized to use this command.")
+        return
 
-    # TODO: You can integrate your send_report function here asynchronously
-
-    await update.message.reply_text(f"Report sent for {username} with reason: {reason}")
-
-# Add handlers for /banlink, /listban, /broadcast similarly with DB
+    text = "Banned links:\n" + "\n".join(banned_links) if banned_links else "No banned links yet."
+    update.message.reply_text(text)
 
 def main():
-    app = ApplicationBuilder().token("7939492963:AAFLHNz7UeIiBziZ1xiwmgrlm0bZR3EK7aI").build()
+    updater = Updater("7939492963:AAFLHNz7UeIiBziZ1xiwmgrlm0bZR3EK7aI", use_context=True)
+    dp = updater.dispatcher
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("report", report))
-    # Add other handlers...
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("report", report))
+    dp.add_handler(CommandHandler("banlink", banlink))
+    dp.add_handler(CommandHandler("listban", listban))
 
-    app.run_polling()
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == "__main__":
     main()
