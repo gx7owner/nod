@@ -1,14 +1,14 @@
 import logging
+import pytz
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters
 )
-import pytz
 
 # ---------------- Configuration ----------------
 TOKEN = "8126587005:AAErZRKQCIIblybMZne-GZ2T2X_IbEX1yn4"  # Replace with your bot token
-OWNER_ID = 7792814115      # Replace with your Telegram ID
+OWNER_ID = 7792814115      # Replace with your Telegram user ID
 
 # ---------------- Logging ----------------
 logging.basicConfig(
@@ -74,20 +74,28 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Handle text messages
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
-    
-    # Category assignment
+
     if "pending_file" in context.user_data:
         doc = context.user_data.pop("pending_file")
         category = text
+
+        # Ensure bot_data["files"] exists
         bot_data = context.application.bot_data
-        bot_data.setdefault("files", {})
-        bot_data["files"].setdefault(category, [])
+        if "files" not in bot_data:
+            bot_data["files"] = {}
+
+        if category not in bot_data["files"]:
+            bot_data["files"][category] = []
+
         if (doc.file_id, doc.file_name) not in bot_data["files"][category]:
             bot_data["files"][category].append((doc.file_id, doc.file_name))
-        await update.message.reply_text(f"✅ File saved under category: *{category}*", parse_mode="Markdown")
+            await update.message.reply_text(f"✅ File saved under category: *{category}*", parse_mode="Markdown")
+        else:
+            await update.message.reply_text("⚠️ This file already exists in the category.")
 
     elif text == "/browse":
         await show_categories(update, context)
+
     else:
         await update.message.reply_text("🤖 Unknown command or text. Use /help to see available options.")
 
@@ -96,7 +104,7 @@ async def show_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_data = context.application.bot_data
     file_store = bot_data.get("files", {})
 
-    if not file_store:
+    if not file_store or all(len(v) == 0 for v in file_store.values()):
         return await update.message.reply_text("📂 No categories available yet.")
 
     keyboard = [
@@ -138,7 +146,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(cat, callback_data=f"delcat:{cat}")]
             for cat in sorted(bot_data.get("files", {}).keys())
         ]
-        await query.message.reply_text("Select a category to delete:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.message.reply_text("🗑️ Select a category to delete:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("delcat:"):
         category = data.split(":", 1)[1]
@@ -153,10 +161,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # Fix timezone issue
+    # Fix timezone issue for job_queue
     app.job_queue.scheduler.configure(timezone=pytz.UTC)
 
-    # Handlers
+    # Add handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("broadcast", broadcast))
@@ -164,10 +172,10 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("✅ Bot running...")
+    print("✅ Bot is running...")
     app.run_polling()
 
 # ---------------- Run ----------------
 
 if __name__ == "__main__":
-    main()
+    main(
