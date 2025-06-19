@@ -1,36 +1,58 @@
-from telethon.sync import TelegramClient
-from telethon.tl.types import InputPeerChannel
-from time import sleep
-import asyncio
+import subprocess
+import time
 
-api_id = '22564049'
-api_hash = 'c60ebbfdbf49d845e66ebf2407feadd3'
-group_file = 'group.txt'
-message_text = "Hello, this is an automated message!"
+TOKEN_1 = "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"
 
-async def main():
-    async with TelegramClient('anon', api_id, api_hash) as client:
-        dialogs = await client.get_dialogs()
-        
-        # Read group name from file
-        with open(group_file, 'r') as f:
-            group_name = f.read().strip()
 
-        target_group = None
-        for dialog in dialogs:
-            if dialog.is_group or dialog.is_channel:
-                if dialog.name == group_name:
-                    target_group = dialog
-                    break
+# Replace with your actual codespace names
+codespaces_by_token = {
+    TOKEN_1: [
+        "jubilant-spork-g46v6w75794j2wrqr",
+        "crispy-system-jj9g7pxrv97xfj7g6",
+    ]
+}
 
-        if not target_group:
-            print(f"Group '{group_name}' not found.")
-            return
+# Check Codespace by trying to SSH in
+def keep_alive(codespace_name):
+    ssh_command = f"gh codespace ssh -c {codespace_name} -- true"
+    try:
+        subprocess.run(ssh_command, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True 
+    except subprocess.CalledProcessError:
+        return False  
 
-        while True:
-            await client.send_message(target_group.id, message_text)
-            print(f"Message sent to {group_name}")
-            sleep(10)
+# Reconnect to Codespace
+def reconnect(codespace_name):
+    print(f"[!] Reconnecting to {codespace_name}...")
+    try:
+        subprocess.run(f"gh codespace ssh -c {codespace_name}", shell=True, check=True)
+        print(f"[+] Reconnected to {codespace_name}")
+    except subprocess.CalledProcessError as e:
+        print(f"[X] Failed to reconnect to {codespace_name}: {e}")
 
-# Run the async main
-asyncio.run(main())
+def authenticate_with_token(token):
+    print(f"Authenticating with GitHub token...")
+    subprocess.run(f'echo {token} | gh auth login --with-token', shell=True, check=True)
+    print("Authenticated.")
+
+def monitor_codespaces():
+    while True:
+        for token, codespaces in codespaces_by_token.items():
+            try:
+                authenticate_with_token(token)
+                for cs in codespaces:
+                    if not keep_alive(cs):
+                        print(f"[!] {cs} appears to be down.")
+                        reconnect(cs)
+                    else:
+                        print(f"[✓] {cs} is up.")
+            except Exception as e:
+                print(f"Error checking Codespaces for a token: {e}")
+        print("Waiting 60 seconds before next check...\n")
+        time.sleep(60)
+
+if __name__ == "__main__":
+    monitor_codespaces()
+    
+    
+    
